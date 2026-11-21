@@ -21,7 +21,8 @@ def get_weather(latitude, longitude):
             "temperature_2m_min",
             "precipitation_sum",
             "precipitation_probability_max",
-            "et0_fao_evapotranspiration"
+            "et0_fao_evapotranspiration",
+            "relative_humidity_2m_mean"
         ],
 
         "forecast_days": 7,

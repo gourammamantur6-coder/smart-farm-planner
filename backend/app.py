@@ -237,7 +237,6 @@ def save_weather():
 
     conn = None
     cursor = None
-
     try:
         weather_data = get_weather(float(latitude), float(longitude))
         daily = weather_data["daily"]
@@ -245,12 +244,6 @@ def save_weather():
         conn = database.get_connection()
         cursor = conn.cursor()
 
-        sql = """
-        INSERT INTO weather_records
-        (location, temperature, rainfall, forecast_date,
-         rain_probability, evapotranspiration)
-        VALUES (%s, %s, %s, %s, %s, %s)
-        """
 
         location = data.get("location", f"{latitude}, {longitude}")
 
@@ -260,26 +253,64 @@ def save_weather():
             records.append((
                 location,
                 daily["temperature_2m_max"][i],
+                daily["relative_humidity_2m_mean"][i],
                 daily["precipitation_sum"][i],
                 daily["time"][i],
                 daily["precipitation_probability_max"][i],
                 daily["et0_fao_evapotranspiration"][i]
             ))
 
-        cursor.executemany(sql, records)
+        for record in records:
+            cursor.execute("""
+                SELECT id
+                FROM weather_records
+                WHERE location = %s AND forecast_date = %s
+                ORDER BY id DESC
+                LIMIT 1
+            """, (record[0], record[4]))
+
+            existing = cursor.fetchone()
+
+            if existing:
+                cursor.execute("""
+                    UPDATE weather_records
+                    SET temperature = %s,
+                        humidity = %s,
+                        rainfall = %s,
+                        rain_probability = %s,
+                        evapotranspiration = %s
+                    WHERE id = %s
+                """, (
+                    record[1], record[2], record[3],
+                    record[5], record[6], existing[0]
+                ))
+            else:
+                cursor.execute("""
+                    INSERT INTO weather_records
+                    (location, temperature, humidity, rainfall,
+                     forecast_date, rain_probability, evapotranspiration)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                """, record)
+
         conn.commit()
 
         return jsonify({
             "status": "success",
-            "message": "Weather forecast saved successfully",
-            "records_saved": cursor.rowcount
+            "message": "Weather records saved successfully",
+            "records_saved": len(records)
         })
 
-    except (ValueError, requests.RequestException) as e:
+    except ValueError:
         return jsonify({
             "status": "error",
-            "message": str(e)
+            "message": "Invalid latitude or longitude"
         }), 400
+
+    except requests.RequestException:
+        return jsonify({
+            "status": "error",
+            "message": "Weather service is unavailable"
+        }), 502
 
     except Exception as e:
         return jsonify({
@@ -404,8 +435,18 @@ def get_weather_records():
         cursor = conn.cursor(dictionary=True)
 
         cursor.execute("""
-            SELECT * FROM weather_records
-            ORDER BY forecast_date DESC
+              SELECT * FROM (
+    SELECT w.*
+    FROM weather_records w
+    INNER JOIN (
+        SELECT location, forecast_date, MAX(id) AS latest_id
+        FROM weather_records
+        GROUP BY location, forecast_date
+    ) latest ON w.id = latest.latest_id
+    ORDER BY w.forecast_date DESC
+    LIMIT 7
+) AS next_days
+ORDER BY forecast_date ASC
         """)
 
         records = cursor.fetchall()
