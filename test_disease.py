@@ -1,8 +1,14 @@
-from ai_weather.disease_detection import detect_disease
+import requests
 
-print("Starting disease detection...")
+url = "http://127.0.0.1:5000/api/disease-detection"
 
-result = detect_disease("test_leaf.jpg")
+image_path = r"C:\Users\kousa\Downloads\leaf.jpeg"
 
-print("\nPlant Disease Detection Result:")
-print(result)
+with open(image_path, "rb") as image:
+    response = requests.post(
+        url,
+        files={"image": image}
+    )
+
+print(response.status_code)
+print(response.json())

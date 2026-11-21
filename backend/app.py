@@ -1,4 +1,3 @@
-
 from flask import Flask, jsonify, request
 import database
 import requests
@@ -221,39 +220,7 @@ def crop_risk():
             "status": "error",
             "message": "Weather service is unavailable"
         }), 502
-@app.route("/api/irrigation", methods=["GET"])
-def irrigation_recommendation():
 
-    latitude = request.args.get("latitude")
-    longitude = request.args.get("longitude")
-
-    if not latitude or not longitude:
-        return jsonify({
-            "status": "error",
-            "message": "Latitude and longitude are required"
-        }), 400
-
-    try:
-        weather_data = get_weather(float(latitude), float(longitude))
-
-        plan = generate_irrigation_plan(weather_data)
-
-        return jsonify({
-            "status": "success",
-            "irrigation_plan": plan
-        })
-
-    except ValueError:
-        return jsonify({
-            "status": "error",
-            "message": "Invalid latitude or longitude"
-        }), 400
-
-    except requests.RequestException:
-        return jsonify({
-            "status": "error",
-            "message": "Weather service is unavailable"
-        }), 502
 @app.route("/api/save-weather", methods=["POST"])
 def save_weather():
 
@@ -325,6 +292,7 @@ def save_weather():
             cursor.close()
         if conn:
             conn.close()
+
 @app.route("/api/save-irrigation", methods=["POST"])
 def save_irrigation():
 
@@ -344,18 +312,50 @@ def save_irrigation():
     cursor = None
 
     try:
-        weather_data = get_weather(float(latitude), float(longitude))
-        plan = generate_irrigation_plan(weather_data)
-
         conn = database.get_connection()
-        cursor = conn.cursor()
+        cursor = conn.cursor(dictionary=True)
 
+        # Get actual farm area
+        cursor.execute(
+            "SELECT area_acres FROM farms WHERE id = %s",
+            (farm_id,)
+        )
+
+        farm = cursor.fetchone()
+
+        if not farm:
+            return jsonify({
+                "status": "error",
+                "message": "Farm not found"
+            }), 404
+
+        area_acres = float(farm["area_acres"])
+
+        # Get weather and calculate irrigation
+        weather_data = get_weather(
+            float(latitude),
+            float(longitude)
+        )
+
+        plan = generate_irrigation_plan(
+            weather_data,
+            area_acres=area_acres
+        )
+
+        # Save irrigation plan
         sql = """
         INSERT INTO irrigation_plans
-        (farm_id, soil_moisture, forecast_rainfall,
-         rain_probability, evapotranspiration,
-         recommendation, reason)
-        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        (
+            farm_id,
+            soil_moisture,
+            forecast_rainfall,
+            rain_probability,
+            evapotranspiration,
+            water_required_litres,
+            recommendation,
+            reason
+        )
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         """
 
         values = (
@@ -364,6 +364,7 @@ def save_irrigation():
             plan["forecast_rainfall_mm"],
             plan["rain_probability_percent"],
             plan["evapotranspiration_mm"],
+            plan["water_required_litres"],
             plan["recommendation"],
             plan["reason"]
         )
@@ -394,5 +395,229 @@ def save_irrigation():
             cursor.close()
         if conn:
             conn.close()
+
+@app.route("/api/weather-records", methods=["GET"])
+def get_weather_records():
+
+    try:
+        conn = database.get_connection()
+        cursor = conn.cursor(dictionary=True)
+
+        cursor.execute("""
+            SELECT * FROM weather_records
+            ORDER BY forecast_date DESC
+        """)
+
+        records = cursor.fetchall()
+
+        cursor.close()
+        conn.close()
+
+        return jsonify({
+            "status": "success",
+            "weather_records": records
+        })
+
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+    
+@app.route("/api/irrigation-records", methods=["GET"])
+def get_irrigation_records():
+
+    conn = None
+    cursor = None
+
+    try:
+        conn = database.get_connection()
+        cursor = conn.cursor(dictionary=True)
+
+        cursor.execute("""
+            SELECT *
+            FROM irrigation_plans
+            ORDER BY id DESC
+        """)
+
+        records = cursor.fetchall()
+
+        return jsonify({
+            "status": "success",
+            "irrigation_records": records
+        })
+
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+@app.route("/api/irrigation", methods=["GET"])
+def irrigation_recommendation():
+
+    latitude = request.args.get("latitude")
+    longitude = request.args.get("longitude")
+    farm_id = request.args.get("farm_id")
+
+    if not latitude or not longitude or not farm_id:
+        return jsonify({
+            "status": "error",
+            "message": "Latitude, longitude and farm_id are required"
+        }), 400
+
+    connection = None
+    cursor = None
+
+    try:
+        connection = database.get_connection()
+        cursor = connection.cursor(dictionary=True)
+
+        cursor.execute(
+            "SELECT area_acres FROM farms WHERE id = %s",
+            (farm_id,)
+        )
+
+        farm = cursor.fetchone()
+
+        if not farm:
+            return jsonify({
+                "status": "error",
+                "message": "Farm not found"
+            }), 404
+
+        area_acres = float(farm["area_acres"])
+
+        weather_data = get_weather(
+            float(latitude),
+            float(longitude)
+        )
+        print("Weather data received:", weather_data.keys())
+
+        plan = generate_irrigation_plan(
+            weather_data,
+            area_acres=area_acres
+        )
+
+        return jsonify({
+            "status": "success",
+            "irrigation_plan": plan
+        })
+
+    except ValueError:
+        return jsonify({
+            "status": "error",
+            "message": "Invalid input values"
+        }), 400
+
+    except requests.RequestException:
+        return jsonify({
+            "status": "error",
+            "message": "Weather service is unavailable"
+        }), 502
+
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+
+    finally:
+        if cursor:
+            cursor.close()
+        if connection:
+            connection.close()
+
+@app.route("/api/crop-recommendation", methods=["POST"])
+def crop_recommendation():
+
+    data = request.get_json() or {}
+
+    required_fields = [
+        "n", "p", "k", "temperature",
+        "humidity", "ph", "rainfall"
+    ]
+
+    if any(field not in data for field in required_fields):
+        return jsonify({
+            "status": "error",
+            "message": "All crop input values are required"
+        }), 400
+
+    try:
+        from ai_weather.crop_recommendation import recommend_crop
+        result = recommend_crop(
+            float(data["n"]),
+            float(data["p"]),
+            float(data["k"]),
+            float(data["temperature"]),
+            float(data["humidity"]),
+            float(data["ph"]),
+            float(data["rainfall"])
+        )
+
+        return jsonify({
+            "status": "success",
+            "crop_recommendation": result
+        })
+
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+@app.route("/api/disease-detection", methods=["POST"])
+def disease_detection():
+
+    from ai_weather.disease_detection import detect_disease
+
+    if "image" not in request.files:
+        return jsonify({
+            "status": "error",
+            "message": "Please upload a plant image"
+        }), 400
+
+    image = request.files["image"]
+
+    if image.filename == "":
+        return jsonify({
+            "status": "error",
+            "message": "No image selected"
+        }), 400
+
+    import os
+    import tempfile
+
+    try:
+        with tempfile.NamedTemporaryFile(
+            delete=False, suffix=".jpg"
+        ) as temp:
+            image.save(temp.name)
+            image_path = temp.name
+
+        result = detect_disease(image_path)
+
+        return jsonify({
+            "status": "success",
+            "disease_detection": result
+        })
+
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+
+    finally:
+        if "image_path" in locals() and os.path.exists(image_path):
+            os.remove(image_path)
+    
 if __name__ == "__main__":
     app.run(debug=True)
