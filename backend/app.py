@@ -534,6 +534,46 @@ def irrigation_recommendation():
             cursor.close()
         if connection:
             connection.close()
+@app.route("/api/fertilizer-recommendation", methods=["POST"])
+def fertilizer_recommendation():
+
+    data = request.get_json() or {}
+
+    required_fields = ["n", "p", "k", "ph", "crop"]
+
+    if any(field not in data for field in required_fields):
+        return jsonify({
+            "status": "error",
+            "message": "N, P, K, pH and crop are required"
+        }), 400
+
+    try:
+        from ai_weather.fertilizer import recommend_fertilizer
+
+        result = recommend_fertilizer(
+            float(data["n"]),
+            float(data["p"]),
+            float(data["k"]),
+            float(data["ph"]),
+            str(data["crop"])
+        )
+
+        return jsonify({
+            "status": "success",
+            "fertilizer_recommendation": result
+        })
+
+    except (ValueError, TypeError) as e:
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 400
+
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
 
 @app.route("/api/crop-recommendation", methods=["POST"])
 def crop_recommendation():
@@ -618,6 +658,35 @@ def disease_detection():
     finally:
         if "image_path" in locals() and os.path.exists(image_path):
             os.remove(image_path)
+@app.route("/api/market-prices", methods=["GET"])
+def market_prices():
+
+    state = request.args.get("state")
+    commodity = request.args.get("commodity")
+    district = request.args.get("district")
+
+    if not state or not commodity:
+        return jsonify({
+            "status": "error",
+            "message": "State and commodity are required"
+        }), 400
+
+    try:
+        from ai_weather.agmarknet_price import (
+            get_market_prices,
+            compare_markets
+        )
+
+        result = get_market_prices(state, commodity, district)
+        comparison = compare_markets(result)
+
+        return jsonify(comparison)
+
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
     
 if __name__ == "__main__":
     app.run(debug=True)
