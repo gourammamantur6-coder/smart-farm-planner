@@ -4,6 +4,7 @@ import requests
 from ai_weather.weather_api import get_weather
 from ai_weather.crop_risk import analyze_crop_risk
 from ai_weather.irrigation import generate_irrigation_plan
+from ai_weather.harvest_prediction import predict_harvest
 app = Flask(__name__)
 @app.route("/api/location-search", methods=["GET"])
 def location_search():
@@ -722,6 +723,49 @@ def market_prices():
         comparison = compare_markets(result)
 
         return jsonify(comparison)
+
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+@app.route("/api/harvest-prediction", methods=["POST"])
+def harvest_prediction():
+    try:
+        data = request.get_json()
+
+        if not data:
+            return jsonify({
+                "status": "error",
+                "message": "JSON data is required"
+            }), 400
+
+        crop = data.get("crop")
+        sowing_date = data.get("sowing_date")
+        maturity_days = data.get("maturity_days")
+
+        if not crop or not sowing_date:
+            return jsonify({
+                "status": "error",
+                "message": "Crop and sowing_date are required"
+            }), 400
+
+        result = predict_harvest(
+            crop,
+            sowing_date,
+            maturity_days
+        )
+
+        return jsonify({
+            "status": "success",
+            "harvest_prediction": result
+        })
+
+    except ValueError as e:
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 400
 
     except Exception as e:
         return jsonify({
