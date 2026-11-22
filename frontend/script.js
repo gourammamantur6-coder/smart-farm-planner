@@ -189,17 +189,49 @@ function getStarted() {
 
 /* REGISTRATION */
 
+
+/* REGISTRATION */
+
 const farmerForm = document.getElementById("farmerForm");
 
 if (farmerForm) {
-    farmerForm.addEventListener("submit", function(event) {
+    farmerForm.addEventListener("submit", async function(event) {
         event.preventDefault();
 
-        alert(translate("registrationSuccess"));
+        const farmerName = document.getElementById("name").value.trim();
+        const mobile = document.getElementById("mobile").value.trim();
+        const village = document.getElementById("village").value.trim();
 
-        window.location.href = "dashboard.html";
+        try {
+            const response = await fetch("http://127.0.0.1:5000/api/farmers", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    name: farmerName,
+                    phone: mobile,
+                    location: village
+                })
+            });
+
+            const result = await response.json();
+
+            if (!response.ok || result.status !== "success") {
+                alert(result.message || "Registration failed. Please try again.");
+                return;
+            }
+
+            alert(result.message);
+            window.location.href = "dashboard.html";
+
+        } catch (error) {
+            console.error("Registration error:", error);
+            alert("Cannot connect to the backend. Please check whether the backend server is running.");
+        }
     });
 }
+
 
 
 /* SOIL ANALYSIS */
