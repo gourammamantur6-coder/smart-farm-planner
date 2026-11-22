@@ -80,6 +80,47 @@ def db_test():
         return {"status": "success", "message": "MySQL connected!"}
     except Exception as e:
         return {"status": "error", "message": str(e)}, 500
+    
+@app.route("/api/farmers", methods=["POST"])
+def register_farmer():
+    data = request.get_json()
+
+    name = data.get("name")
+    phone = data.get("phone")
+    location = data.get("location")
+
+    if not name or not phone or not location:
+        return jsonify({
+            "status": "error",
+            "message": "Name, phone and village are required"
+        }), 400
+
+    try:
+        conn = database.get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute(
+            "INSERT INTO farmers (name, phone, location) VALUES (%s, %s, %s)",
+            (name, phone, location)
+        )
+
+        conn.commit()
+        farmer_id = cursor.lastrowid
+
+        cursor.close()
+        conn.close()
+
+        return jsonify({
+            "status": "success",
+            "message": "Farmer registered successfully",
+            "farmer_id": farmer_id
+        }), 201
+
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+
 
 @app.route("/api/farmers", methods=["GET"])
 def get_farmers():
